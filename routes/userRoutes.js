@@ -9,21 +9,31 @@ require("dotenv").config();
 router.post("/register", async (req, res) => {
     const { name, email, phone, password } = req.body;
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const query = "INSERT INTO Users (Name, Email, Phone, PasswordHash) VALUES (?, ?, ?, ?)";
-    
-    db.query(query, [name, email, phone, hashedPassword], (err, result) => {
+    // Check if email already exists
+    const checkQuery = "SELECT * FROM Users WHERE Email = ?";
+    db.query(checkQuery, [email], async (err, results) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        // Generate JWT Token for auto login
-        const token = jwt.sign({ userID: result.insertId, email }, process.env.JWT_SECRET, { expiresIn: "1h" });
+        if (results.length > 0) {
+            return res.status(400).json({ error: "Email address already exists!" });
+        }
 
-        res.status(201).json({ 
-            message: "User Registered & Logged in Successfully", 
-            token,  
-            UserID: result.insertId 
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insert new user
+        const insertQuery = "INSERT INTO Users (Name, Email, Phone, PasswordHash) VALUES (?, ?, ?, ?)";
+        db.query(insertQuery, [name, email, phone, hashedPassword], (err, result) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            // Generate JWT Token for auto login
+            const token = jwt.sign({ userID: result.insertId, email }, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+            res.status(201).json({ 
+                message: "User Registered & Logged in Successfully", 
+                token,  
+                userID: result.insertId 
+            });
         });
     });
 });
@@ -34,7 +44,8 @@ router.post("/login", (req, res) => {
     const query = "SELECT * FROM Users WHERE Email = ?";
 
     db.query(query, [email], async (err, results) => {
-        if (err || results.length === 0) return res.status(401).json({ error: "Invalid credentials" });
+        if (err) return res.status(500).json({ error: err.message });
+        if (results.length === 0) return res.status(401).json({ error: "Invalid credentials" });
 
         const user = results[0];
 
